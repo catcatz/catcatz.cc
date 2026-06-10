@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en" class="bg-[#0a0a0a]">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>catcatZ の HomeLab</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        mono: ['"JetBrains Mono"', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
+                    },
+                },
+            },
+        }
+    </script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'JetBrains Mono', Menlo, Monaco, Consolas, monospace;
+            background: #0a0a0a;
+            color: #c0c0c0;
+            min-height: 100vh;
+        }
+
+        /* Scanline overlay for CRT feel */
+        .scanlines {
+            pointer-events: none;
+            position: fixed;
+            inset: 0;
+            background: repeating-linear-gradient(
+                0deg,
+                transparent,
+                transparent 2px,
+                rgba(0, 0, 0, 0.03) 2px,
+                rgba(0, 0, 0, 0.03) 4px
+            );
+            z-index: 100;
+        }
+
+        /* Neon glow */
+        .neon-cyan {
+            color: #00ffff;
+            text-shadow: 0 0 7px rgba(0, 255, 255, 0.5), 0 0 20px rgba(0, 255, 255, 0.2);
+        }
+        .neon-green {
+            color: #00ff00;
+            text-shadow: 0 0 7px rgba(0, 255, 0, 0.5);
+        }
+        .neon-amber {
+            color: #ffaa00;
+            text-shadow: 0 0 7px rgba(255, 170, 0, 0.4);
+        }
+
+        /* Terminal window */
+        .terminal-window {
+            border: 1px solid #333;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 0 30px rgba(0, 255, 255, 0.05), 0 0 60px rgba(0, 0, 0, 0.5);
+            background: rgba(10, 10, 10, 0.95);
+        }
+
+        .window-dots {
+            display: flex;
+            gap: 8px;
+            padding: 12px 16px;
+            background: #161616;
+            border-bottom: 1px solid #222;
+        }
+        .dot { width: 12px; height: 12px; border-radius: 50%; }
+        .dot-red { background: #ff5f56; }
+        .dot-yellow { background: #ffbd2e; }
+        .dot-green { background: #27c93f; }
+
+        /* Boot line fade-in */
+        .boot-line {
+            opacity: 0;
+            animation: fadeIn 0.15s ease forwards;
+        }
+        @keyframes fadeIn { to { opacity: 1; } }
+
+        /* Blinking cursor */
+        .cursor::after {
+            content: '█';
+            animation: blink 1s step-end infinite;
+            color: #00ffff;
+        }
+        @keyframes blink { 50% { opacity: 0; } }
+
+        /* Status bar */
+        .status-bar {
+            border-top: 1px solid #222;
+            border-bottom: 1px solid #222;
+            background: #0d0d0d;
+        }
+
+        /* Project row hover */
+        .project-row {
+            transition: background 0.15s, transform 0.15s;
+            border: 1px solid transparent;
+        }
+        .project-row:hover {
+            background: rgba(0, 255, 255, 0.05);
+            border-color: rgba(0, 255, 255, 0.15);
+        }
+
+        /* Status badge */
+        .badge {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 3px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            border: 1px solid;
+        }
+        .badge-ready {
+            color: #00ff00;
+            border-color: #00ff00;
+            text-shadow: 0 0 5px rgba(0, 255, 0, 0.3);
+        }
+        .badge-wip {
+            color: #ffaa00;
+            border-color: #ffaa00;
+            text-shadow: 0 0 5px rgba(255, 170, 0, 0.3);
+        }
+
+        /* Cooldown pulse animation */
+        @keyframes pulse-border {
+            0%, 100% { border-color: rgba(0, 255, 255, 0.15); }
+            50% { border-color: rgba(0, 255, 255, 0.35); }
+        }
+
+        /* Mobile responsive */
+        @media (max-width: 640px) {
+            .project-meta { display: none; }
+            .terminal-window { border-radius: 4px; }
+            .boot-content, .project-content { padding: 16px !important; }
+            .status-bar { font-size: 0.7rem !important; padding: 8px 16px !important; }
+            .window-dots { padding: 8px 12px; }
+            .dot { width: 10px; height: 10px; }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4 sm:p-8">
+    <div class="scanlines"></div>
+
+    <main class="terminal-window w-full max-w-3xl mx-auto relative z-10">
+        <!-- macOS Window Controls -->
+        <div class="window-dots">
+            <div class="dot dot-red"></div>
+            <div class="dot dot-yellow"></div>
+            <div class="dot dot-green"></div>
+        </div>
+
+        <!-- Boot Sequence -->
+        <div id="boot-section" class="boot-content p-6 sm:p-8 font-mono text-sm sm:text-base leading-relaxed">
+            <div class="mb-1 text-[#666]">Last login: <span id="boot-date"></span> from 127.0.0.1</div>
+            <div id="boot-lines"></div>
+        </div>
+
+        <!-- Main Content (hidden during boot) -->
+        <div id="main-content" class="hidden">
+            <!-- Status Bar -->
+            <div class="status-bar flex flex-wrap items-center gap-x-6 gap-y-1 px-6 sm:px-8 py-3 font-mono text-xs sm:text-sm">
+                <span>STATUS&nbsp;<span class="neon-green font-bold">ONLINE</span></span>
+                <span class="text-[#444]">|</span>
+                <span>PROJECTS&nbsp;<span class="text-white font-bold">2</span></span>
+                <span class="text-[#444]">|</span>
+                <span>NODE&nbsp;<span class="text-white font-bold">hkg</span></span>
+            </div>
+
+            <!-- Project Listing -->
+            <div class="project-content p-6 sm:p-8 font-mono text-sm sm:text-base">
+                <div class="mb-6">
+                    <span class="text-[#888]">catcatz@homelab</span>
+                    <span class="text-white">:</span>
+                    <span class="text-[#00ffff]">~</span>
+                    <span class="text-white">$ ls -la /home/catcatz/projects</span>
+                </div>
+
+                <!-- Projects -->
+                <div class="space-y-1">
+                    <!-- AI English Tutor -->
+                    <a href="/tutor/"
+                       class="project-row flex items-baseline gap-3 sm:gap-4 px-3 py-3 rounded no-underline text-inherit group"
+                       style="display: block; text-decoration: none; color: inherit;">
+                        <span class="text-[#888] text-xs w-20 shrink-0 hidden sm:inline">drwxr-xr-x</span>
+                        <span class="text-[#888] text-xs w-16 shrink-0 hidden sm:inline">catcatz</span>
+                        <span class="text-2xl shrink-0">🗣️</span>
+                        <span class="text-[#00ffff] font-semibold group-hover:underline shrink-0">ai-english-tutor</span>
+                        <span class="text-[#666] truncate">Cantonese + English voice conversation practice</span>
+                        <span class="shrink-0 ml-auto"><span class="badge badge-ready">READY</span></span>
+                    </a>
+
+                    <!-- Nagoya Travel -->
+                    <a href="/trip/"
+                       class="project-row flex items-baseline gap-3 sm:gap-4 px-3 py-3 rounded no-underline text-inherit group"
+                       style="display: block; text-decoration: none; color: inherit;">
+                        <span class="text-[#888] text-xs w-20 shrink-0 hidden sm:inline">drwxr-xr-x</span>
+                        <span class="text-[#888] text-xs w-16 shrink-0 hidden sm:inline">catcatz</span>
+                        <span class="text-2xl shrink-0">🍜</span>
+                        <span class="text-[#00ffff] font-semibold group-hover:underline shrink-0">nagoya-travel</span>
+                        <span class="text-[#666] truncate">Nagoya trip planner &amp; food guide</span>
+                        <span class="shrink-0 ml-auto"><span class="badge badge-wip">WIP</span></span>
+                    </a>
+                </div>
+
+                <!-- Prompt line -->
+                <div class="mt-8 text-sm">
+                    <span class="text-[#888]">catcatz@homelab</span>
+                    <span class="text-white">:</span>
+                    <span class="text-[#00ffff]">~</span>
+                    <span class="text-white">$ <span class="cursor"></span></span>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="fixed bottom-0 left-0 right-0 text-center pb-3 font-mono text-[11px] sm:text-xs text-[#555] z-10">
+        [catcatz@homelab] ~ connection: secure | node: hkg | catcatz.cc
+    </footer>
+
+    <script>
+        // Set boot date
+        document.getElementById('boot-date').textContent = new Date().toLocaleString('en-US', {
+            weekday: 'short', month: 'short', day: 'numeric',
+            hour: '2-digit', minute: '2-digit', second: '2-digit'
+        });
+
+        // Boot sequence lines
+        const bootLines = [
+            { text: 'Initializing kernel modules...', status: 'OK', color: 'green' },
+            { text: 'Mounting filesystems...', status: 'OK', color: 'green' },
+            { text: 'Loading network interfaces...', status: 'OK', color: 'green' },
+            { text: 'Starting SSH daemon on :22', status: 'OK', color: 'green' },
+            { text: 'Loading systemd services...', status: 'OK', color: 'green' },
+            { text: 'Starting nginx web server...', status: 'OK', color: 'green' },
+            { text: 'Initializing AI modules...', status: 'OK', color: 'green' },
+            { text: 'Loading catcatZ HomeLab...', status: 'OK', color: 'cyan' },
+        ];
+
+        const bootLinesEl = document.getElementById('boot-lines');
+        const bootSection = document.getElementById('boot-section');
+        const mainContent = document.getElementById('main-content');
+
+        function renderBootLine(line, color) {
+            const div = document.createElement('div');
+            div.className = 'boot-line mb-0.5';
+            const colorClass = color === 'cyan' ? 'neon-cyan' : 'neon-green';
+            div.innerHTML = `<span class="${colorClass}">[  ${line.status}  ]</span> <span class="text-[#aaa]">${line.text}</span>`;
+            return div;
+        }
+
+        let delay = 0;
+        bootLines.forEach((line, i) => {
+            delay += 200;
+            setTimeout(() => {
+                const color = line.color || 'green';
+                bootLinesEl.appendChild(renderBootLine(line, color));
+
+                if (i === bootLines.length - 1) {
+                    // Final boot line done
+                    setTimeout(() => {
+                        // Add title
+                        const titleDiv = document.createElement('div');
+                        titleDiv.className = 'boot-line mt-6';
+                        titleDiv.innerHTML = `
+                            <div class="text-4xl sm:text-6xl font-bold neon-cyan tracking-tight mb-2">catcatZ</div>
+                            <div class="text-[#888] text-sm sm:text-base ml-1">catcatZ の HomeLab</div>
+                        `;
+                        bootLinesEl.appendChild(titleDiv);
+
+                        // Add status command
+                        setTimeout(() => {
+                            const cmdDiv = document.createElement('div');
+                            cmdDiv.className = 'boot-line mt-6 text-sm';
+                            cmdDiv.innerHTML = `
+                                <span class="text-[#888]">catcatz@homelab</span>
+                                <span class="text-white">:</span>
+                                <span class="text-[#00ffff]">~</span>
+                                <span class="text-white">$ ./status.sh</span>
+                            `;
+                            bootLinesEl.appendChild(cmdDiv);
+
+                            // Show main content after pause
+                            setTimeout(() => {
+                                bootSection.classList.add('hidden');
+                                mainContent.classList.remove('hidden');
+                            }, 600);
+                        }, 400);
+                    }, 300);
+                }
+            }, delay);
+        });
+    </script>
+</body>
+</html>
